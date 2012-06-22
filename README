@@ -1,0 +1,28 @@
+== virt-scripts
+Scripts related to virtualization tools
+
+=== Contents
+ * OneEnvironment - Ruby script to validate OpenNebula environment
+ * OneMigration - Ruby script to migrate all OpenNebula VMs on one host to
+ another host
+
+=== Dependencies
+==== System environment
+These scripts use OpenNebula client command and hence it needs to be installed
+and configured to connect with OpenNebula server's XML-RPC interface. If the
+regular OpenNebula commands like onevm and onehost are working from the system
+then this script should work fine as well.
+
+==== Ruby gems
+The OpenNebula scripts are built on top of the regular OpenNebula commands.
+Hence, if you have a OpenNebula client working properly then OpenNebula scripts
+should work fine as well. In case the OpenNebula client is not configured on
+the system then you will need to install gems mentioned in the Gemfile and
+configure OpenNebula environment as you would do normally, i.e., set ONE_AUTH
+and ONE_XMLRPC environment variables properly.
+Known system dependencies:
+ * libxml2-devel (nokogiri)
+ * libxslt-devel (nokogiri)
+ * libgcrypt-devel (nokogiri)
+ * libgpg-error-devel (nokogiri)
+

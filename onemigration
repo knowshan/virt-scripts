@@ -1,0 +1,163 @@
+#!/usr/bin/env ruby
+
+# == Synopsis 
+# Script to migrate all OpenNebula VMs from one host to another.
+# The migration is performed by invoking OpenNebula CLI command - onevm livemigrate
+# Since the script is built on onevm command, you will need ONE_AUTH and ONE_XMLRPC
+# environment setup up properly in order to use this script.
+#    
+#
+# == Examples
+# ./onemigration -s kvm-02 -d kvm-03
+#
+# == Usage 
+#   onemigration [options]
+#   For help use: onemigration -h
+#   See Examples ^^
+#
+# == TODO/Issues:
+# * Check whether dest host is enabled/disabled; Apparently OpenNebula doesn't check
+#  it during migration
+# * What if - source and dest are the same?? 
+# * Check if src/dest hosts are accessible
+# * Capture and process exit code/message returned by OpenNebula
+#
+# == Author
+#   Shantanu Pavgi, knowshantanu@gmail.com  
+
+require 'rubygems'
+require 'nokogiri'
+require 'optparse'
+require 'ostruct'
+require 'oneenvironment'
+
+class OneMigration
+  @@VERSION="1.0.0"
+
+  # Initialize/instantiate new OneMigration object 
+  attr_reader :options
+  def initialize(arguments)
+    @arguments = arguments
+    # Set default options for the script 
+    @options = OpenStruct.new
+    @options.help = false
+    @options.source = nil
+    @options.dest = nil
+  end
+
+  # Display help 
+  def output_help
+    puts "HELP:"
+    puts "Script to migrate all OpenNebula VMs from one host to another host."
+    puts @optionparser_obj
+    exit
+  end
+
+  # Create option parser object and then parse it to get option values
+  def parsed_options?
+    @optionparser_obj = OptionParser.new do |opts|
+      opts.banner = "#{$0} OPTIONS"
+      opts.on('-h', '--help', "Display help") { @options.help = true }
+      opts.on('-s', '--src SRC', "Source host (Required)") { |v| @options.src =  v }
+      opts.on('-d', '--dest DEST', "Destination host for migration (Required)") { |v| @options.dest = v }
+    end
+    begin 
+      @optionparser_obj.parse!(@arguments)
+    rescue OptionParser::InvalidOption => e
+      puts e
+      puts "See help using #{$0} -h"
+      exit 1
+    rescue OptionParser::MissingArgument => e
+      puts e 
+      puts "See help using #{$0} -h"
+      exit 1
+    rescue OptionParser::InvalidArgument => e
+      puts e
+      puts "See help using #{$0} -h"
+      exit 1
+    end
+    process_options
+    true
+  end
+
+  # process and further validate options
+  def process_options
+    # optparse doesn't provide any option to specify mandatory switches. Hence, it
+    # needs to be validated by checking presence of argument values.
+    # Ideally - I would like to iterate over mandatory_args = ['src','dest']
+    # and then raise an error for missing arg.
+    output_help if @options.help # display help and exit
+    if @options.src.nil?
+      raise ArgumentError.new("Missing required option -s \nSee help using #{$0} -h")
+      exit 1
+    end
+    if @options.dest.nil?
+      raise ArgumentError.new("Missing required option -d \nSee help using #{$0} -h")
+      exit 1
+    end
+    @source = @options.src
+    @dest = @options.dest
+    # Check if hosts are registered in OpenNebula
+    # NOTE - OpenNebula happily migrates VMs to hosts 'disabled' in it's database
+    # It's not fixed even in this script right now!
+    host_active([@source,@dest])
+  end
+
+  # Check if host exists
+  def host_active(hnames)
+    hnames.each do |hname|
+      cmd = "onehost show #{hname}"
+      `#{cmd}`
+      if $? != 0
+        puts "Host #{hname} not found in OpenNebula's host pool. \n"
+        exit 1 
+      end
+    end
+  end
+
+  # Returns list of VMs @source
+  def list
+    xml_doc  = Nokogiri::XML(`onevm list -x`)
+    @onevms = []
+    xml_doc.xpath('//VM_POOL/VM').each do |e|
+      @onevms << e.at('ID').text if e.at('HOSTNAME').text == @source # && e.at('ID').text == '44'
+    end
+    @onevms
+  end
+
+  # Migrates @onevms to @dest
+  def livemigrate
+    @onevms.each do |v|
+      cmd = "onevm livemigrate #{v} #{@dest} -v"
+      puts "# Migrating VM #{v}to #{@dest} using command :#{cmd}"
+      vinfo = `#{cmd}`
+      puts "# #{vinfo}"
+    end
+  end
+ 
+  def process_command
+    puts "# #{$0} #{@options.to_s}"
+    list
+    livemigrate
+  end
+  
+  # Run application instance
+  def run
+    # parsed_options 
+    if parsed_options? 
+      # process_options # should process_option be called here or from parsed_options??
+      # output_options
+      # process_command performs the real job
+      process_command
+    else
+      puts "Unknown Error. No Donuts for you...!"
+      exit 99
+    end
+  end
+
+  private :livemigrate, :list
+end
+
+# Create and run OneMigration
+onemigrate = OneMigration.new(ARGV)
+onemigrate.run
