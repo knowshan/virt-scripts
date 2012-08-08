@@ -20,18 +20,20 @@ require 'nokogiri'
 # Using #2 aproach other classes can pass arguments dynamically, however, that
 # may not be a good solution.
 
-DomainStruct = Struct.new(:name,:memory,:vncport) do
+DomainStruct = Struct.new(:name,:memory,:disk,:vncport,:os_cmdline) do
   # Ideally - I would like to pass initialize values as a Hash
   # :name => 'server-01', :memory => '1048576', ...
   # that will need more hacking and being aware of it's side-effects
-  def initialize(name,memory,vncport)
-    super(name,memory,vncport)
+  def initialize(name,memory,disk,vncport,os_cmdline)
+    super(name,memory,disk,vncport,os_cmdline)
     raise ArgumentError.new("You need to provide at least domain name!") if self.name.nil?
     # Set defaults if not provided
     # We can/should run additional validation checks as well
     # memory shouldn't be more than 8G!
+    self.disk = "/lustre/scratch/pavgi/vmimages/#{name}.disk" if self.disk.nil?
     self.memory = '1048576' if self.memory.nil?
     self.vncport = '-1' if self.vncport.nil?
+    # self.os_cmdline = self.cmdline
   end
 
   # Return domain xml as a string
@@ -47,7 +49,8 @@ DomainStruct = Struct.new(:name,:memory,:vncport) do
 	  xml.boot('dev' => 'hd')
 	  xml.kernel "/share/repo/mirror/centos/6.2/os/x86_64/images/pxeboot/vmlinuz"
 	  xml.initrd "/share/repo/mirror/centos/6.2/os/x86_64/images/pxeboot/initrd.img"
-	  xml.cmdline "method=http://172.20.0.5/repo/centos/6/os/x86_64 ks=http://172.20.0.103:10007/atlab/kickstart/rcs-el6//generic-server-centos6-ccts.cfg ksdevice=eth0 ip=172.20.100.22 netmask=255.255.0.0 nameserver=172.20.0.5 gateway=172.20.0.1"
+	  xml.cmdline os_cmdline
+	  # "method=http://172.20.0.5/repo/centos/6/os/x86_64 ks=http://172.20.0.103:10007/atlab/kickstart/rcs-el6/postgresql-centos6.cfg ksdevice=eth0 ip=172.20.100.22 netmask=255.255.0.0 nameserver=172.20.0.5 gateway=172.20.0.1"
         }
 	xml.features {
           xml.acpi
@@ -62,7 +65,7 @@ DomainStruct = Struct.new(:name,:memory,:vncport) do
 	  xml.emulator '/usr/libexec/qemu-kvm'
 	  xml.disk('type' => 'file', 'device' => 'disk') {
             xml.driver('name' => 'qemu', 'type' => 'raw', 'cache' => 'none')
-	    xml.source('file' => "/lustre/scratch/pavgi/vmimages/#{name}.disk")
+	    xml.source('file' => disk)
 	    xml.target('dev' => 'hda', 'bus' => 'virtio')
 	    # libvirt can auto-generate pci address space
 	    # xml.address('type' => 'pci', 'domain' => '0x0000', 'bus' => '0x00', 'slot' => '0x04', 'function' => '0x0')
