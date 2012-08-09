@@ -10,11 +10,29 @@
 #  host as libvirt connection will be qemu+ssh.
 # 4. Run 'oneimager.rb -h' to get help on the script
 
+
+# Added kernel method using which can be used to carry out
+# libvirt actions 'using' passed connection object and action block
+# using - ensures that libvirt connection is closed
+# Alternatively, I could have added connection close after every
+# libvirt action. But this becomes complicated, rather, difficult to remember
+# with conditional actions. Hence, I am using 'using'.
+# TODO: fail/exit gracefully if no action block is given
+module Kernel
+  def using(connection_resource)
+    begin
+      yield
+    ensure
+      connection_resource.close
+    end
+  end
+end
+
 require 'rubygems'
 # Load dependency Ruby gems
 gem_req = {'libvirt' => 'creating VM domain','nokogiri' => 'XML formatting', 'oca' => 'OpenNebula actions'}
 gem_req.each do |g,u|
-  begin 
+  begin
     require g
   rescue Exception => e
     puts "This script requires #{g} gem."
@@ -60,7 +78,7 @@ class OneImager
     @options.extraargs = "method=#{install_tree} ks=#{ksurl} ksdevice=eth0 ip=#{ip} netmask=#{netmask} gateway=#{gateway} nameserver=#{nameserver}"
     @options.transient = false
   end
-  
+
   def parsed_options?
     mem_regex = /\d+([mMgG]|$)/
     @optionparser_obj = OptionParser.new do |opts|
@@ -81,7 +99,7 @@ class OneImager
       puts "See help using #{$0} -h"
       exit 1
     rescue OptionParser::MissingArgument => e
-      puts e 
+      puts e
       puts "See help using #{$0} -h"
       exit 1
     rescue OptionParser::InvalidArgument => e
@@ -90,9 +108,9 @@ class OneImager
       exit 1
     end
     process_validate_options
-    true  
+    true
   end
-  
+
   def process_validate_options
     output_help if @options.help
     @name = @options.name
@@ -111,91 +129,137 @@ class OneImager
     end
 
     @vncport = @options.vncport
-    # default for disk and desc can't be added during initialize as at that time @options.name is not set
+    # default for disk can't be added during initialize as at that time @options.name is not set
     # TODO: ^^ Hence, need to revise this pattern - use trollop??
     @disk = @options.disk.nil? ? "/lustre/scratch/pavgi/vmimages/#{@name}.disk" : @options.disk
     @extraargs = @options.extraargs
     @transient = @options.transient
-    @desc = @options.desc.nil? ? "#{@name} image" : @options.desc
+    @desc = @options.desc
+    # if image desc is provided then try registering the disk in OpenNebula
+    # so this options serves two things at the moment - provides image desc and image registration trigger
+    # @desc = @options.desc.nil? ? "#{@name} image" : @options.desc
   end
-  
+
   def output_help
     puts "HELP"
     puts "Script to create VM!"
     puts @optionparser_obj
     exit
   end
- 
+
+  # Create raw disk image using qemu-img
+  # TODO: what if file already exists??
+  def create_raw_disk
+    cmd = "qemu-img create #{@disk} 40G"
+    puts "Creating disk image using qemu-img:"
+    puts cmd
+    `#{cmd}`
+    File.chmod(0660,@disk)
+  end
+
   def process_command
     # puts @name,@memory
     d = DomainStruct.new(@name,@memory,@disk,@vncport,@extraargs)
     dxml = d.to_xml
     puts dxml
-
-    begin 
-      @conn = Libvirt::open("qemu+ssh://#{@server}/system")
-      cmd = "qemu-img create #{@disk} 40G"
-      puts cmd
-      `#{cmd}`
-      File.chmod(0660,@disk)
-      # if transient then create a domain without defining it
-      if @transient
-        begin
-	  @dobj = @conn.create_domain_xml(dxml)
-	rescue Exception => e
-	  puts "Failed to create a domain."
-	  puts e
-	  exit 1
-	end
-      else
-        begin
-	  @dobj = @conn.define_domain_xml(dxml)
-	  @dobj.create
-	rescue Exception => e
-	  puts "Failed to create a domain."
-	  puts e
-	  exit 1
-        end
-      end
-      puts '****** Domain state information ******'
-      puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
-    rescue => e
+    # create libvirt connection
+    begin
+      conn = Libvirt::open("qemu+ssh://#{@server}/system")
+    rescue Exception => e
+      puts "Error connecting to the #{@server}"
       puts e
-    else
-      # TODO - make sleep time user configurable??
-      sleep_time = 600
-      interval_time = 30
-      while sleep_time > 0
-        puts "Next domain status check will be done after #{sleep_time} seconds"
-        sleep interval_time
-	sleep_time-=interval_time
+    end
+    # end of libvirt connection
+    # connection available for use
+    # hence using conn block starts
+    using (conn) do
+      # check if domain already exists
+      begin
+        conn.lookup_domain_by_name @name
+      # here exception means domain doesn't exist yet and hence call
+      # further actions
+      rescue Exception => e
+        # create raw disk
+        create_raw_disk
+        # if transient then create a domain without defining it
+        if @transient
+          begin
+	    @dobj = conn.create_domain_xml(dxml)
+	  rescue Exception => e
+	    puts "Failed to create a domain."
+	    puts e
+	  else
+	    # if desc was not nil then register the image
+            if @desc.nil?
+              # provide VM details and exit
+              puts '****** Domain state information ******'
+              puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
+	    else
+              opennebula_register
+	    end
+	  end
+        else
+          begin
+	    @dobj = conn.define_domain_xml(dxml)
+	    #### @dobj.create
+	  rescue Exception => e
+	    puts "Failed to create a domain."
+	    puts e
+	  else
+	    # if desc was not nil then register the image
+            if @desc.nil?
+              # provide VM details and exit
+              puts '****** Domain state information ******'
+              puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
+	    else
+              opennebula_register
+	    end
+	  end
+        end
+        # end-if transient/persistent domain actions
+      else
+        # if no error is received - which means domain exists
+	# hence exit of the loop
+	puts "A domain by name #{@name} already exists on the #{@server}"
+	exit
       end
-      # Image registration takes place only after VM is shutdown and removed 
-      # from the KVM host. The later step isn't really required, but usually
-      # we don't any such VM copies on the host.
-      # Hence create transient VMs (-t flag) and power-off VMs in the kickstart
-      # if you plan to register them in opennebula after creation.
-      while exists? do
-        puts "Domain #{@dobj.name} is still active on the #{@server}. It needs to be undefined for OpenNebula image registration"
-	sleep 2
-      end
-      puts "Domain #{@dobj.name} is now undefined on the #{@server}."
-      puts "Starting with #{@disk} image registration in OpenNebula"
-      img_template = <<EOF
+    end
+  end
+
+  def opennebula_register
+    # wait till VM is undefined/safe-for-one-registration
+    # TODO - make sleep time user configurable??
+    sleep_time = 6
+    interval_time = 3
+    while sleep_time > 0
+      puts "Next domain status check will be done after #{sleep_time} seconds"
+      sleep interval_time
+      sleep_time-=interval_time
+    end
+    # Image registration takes place only after VM is shutdown and remove
+    # from the KVM host. The later step isn't really required, but usually
+    # we don't any such VM copies on the host.
+    # Hence create transient VMs (-t flag) and power-off VMs in the kickstart
+    # if you plan to register them in opennebula after creation.
+    while exists? do
+      puts "Domain #{@dobj.name} is still active on the #{@server}. It needs to be undefined for OpenNebula image registration"
+      sleep 2
+    end
+    puts "Domain #{@dobj.name} is now undefined on the #{@server}."
+    puts "Starting with #{@disk} image registration in OpenNebula"
+img_template = <<EOF
 NAME = "#{@name}"
 PATH = "#{@disk}"
 TYPE = "OS"
 PUBLIC = YES
 DESCRIPTION = "#{@desc}"
-IMGTYPE=ccts
 EOF
-      puts "Registering image template:"
-      puts img_template
-      client = OpenNebula::Client.new
-      image = OpenNebula::Image.new(OpenNebula::Image.build_xml,client)
-      image.allocate(img_template)
-      @conn.close
-    end
+    puts "Registering image template:"
+    puts img_template
+    client = OpenNebula::Client.new
+    image = OpenNebula::Image.new(OpenNebula::Image.build_xml,client)
+    image.allocate(img_template)
+    puts 'closed' if conn.closed?
   end
 
   def exists?
@@ -217,7 +281,7 @@ EOF
       exit 1
     end
   end
-  
+
 end
 
 oneimager = OneImager.new(ARGV)
