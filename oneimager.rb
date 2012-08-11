@@ -181,42 +181,30 @@ class OneImager
       rescue Exception => e
         # create raw disk
         create_raw_disk
-        # if transient then create a domain without defining it
-        if @transient
-          begin
+        #start define domain
+        begin
+	  if @transient
 	    @dobj = conn.create_domain_xml(dxml)
-	  rescue Exception => e
-	    puts "Failed to create a domain."
-	    puts e
 	  else
-	    # if desc was not nil then register the image
-            if @desc.nil?
-              # provide VM details and exit
-              puts '****** Domain state information ******'
-              puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
-	    else
-              opennebula_register
-	    end
-	  end
-        else
-          begin
 	    @dobj = conn.define_domain_xml(dxml)
 	    #### @dobj.create
-	  rescue Exception => e
-	    puts "Failed to create a domain."
-	    puts e
-	  else
-	    # if desc was not nil then register the image
-            if @desc.nil?
-              # provide VM details and exit
-              puts '****** Domain state information ******'
-              puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
-	    else
-              opennebula_register
-	    end
 	  end
+	rescue Exception => e
+	  puts "Failed to create a domain."
+	  puts e
+	else
+	  # if desc was not nil then register the image
+	  #start-if opennebula_register check
+          if @desc.nil?
+            # provide VM details and exit
+            puts '****** Domain state information ******'
+            puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
+	  else
+            opennebula_register
+	  end
+	  #end-if opennebula_register check
         end
-        # end-if transient/persistent domain actions
+        #end define domain
       else
         # if no error is received - which means domain exists
 	# hence exit of the loop
