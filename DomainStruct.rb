@@ -9,7 +9,7 @@ require 'nokogiri'
 # Other end-user oriented scripting classes should instantiate DomainStruct
 # object and get it's xml formatted output.
 
-# The custom initialize method of DomainStruct strictly requires 3 arguments.
+# The custom initialize method of DomainStruct strictly requires five arguments.
 # I have defined custom initialize method which overrides Struct's initialize
 # method so that some validation checks can be added later.
 # If I hadn't implemented custom initialize method then DomainStruct Struct
