@@ -1,5 +1,24 @@
 #!/usr/bin/env ruby
 
+# == Synopsis 
+# Script to create a VM using libvirt's direct kernel boot method. Optionally,
+# the created VM disk can be registered with OpenNebula cloud. 
+#    
+# == Examples
+# ./oneimager.rb -n vm-name -s kvm-02 -d /lustre/scratch/pavgi/VMs/vm-name.disk
+#
+# == Usage 
+#   onemimager.rb [options]
+#   For help use: onemigration -h
+#   See Examples ^^
+#
+# == TODO/Issues:
+#
+# == Author
+#   Shantanu Pavgi, knowshantanu@gmail.com  
+
+#!/usr/bin/env ruby
+
 # Quick HowTo:
 # 1. Make sure you have all the necessary files in virt-scripts repo and not
 #  just this script.
@@ -183,33 +202,34 @@ class OneImager
         create_raw_disk
         #start define domain
         begin
-	  if @transient
-	    @dobj = conn.create_domain_xml(dxml)
-	  else
-	    @dobj = conn.define_domain_xml(dxml)
-	    #### @dobj.create
-	  end
-	rescue Exception => e
-	  puts "Failed to create a domain."
-	  puts e
-	else
-	  # if desc was not nil then register the image
-	  #start-if opennebula_register check
+          if @transient
+            @dobj = conn.create_domain_xml(dxml)
+          else
+            @dobj = conn.define_domain_xml(dxml)
+            @dobj.create
+            #### @dobj.create
+          end
+        rescue Exception => e
+          puts "Failed to create a domain."
+          puts e
+        else
+          # if desc was not nil then register the image
+          #start-if opennebula_register check
           if @desc.nil?
             # provide VM details and exit
             puts '****** Domain state information ******'
             puts "Domain #{@dobj.name} is active on #{@server}" if @dobj.active?
-	  else
+          else
             opennebula_register
-	  end
-	  #end-if opennebula_register check
+          end
+          #end-if opennebula_register check
         end
         #end define domain
       else
         # if no error is received - which means domain exists
-	# hence exit of the loop
-	puts "A domain by name #{@name} already exists on the #{@server}"
-	exit
+        # hence exit of the loop
+        puts "A domain by name #{@name} already exists on the #{@server}"
+        exit
       end
     end
   end
