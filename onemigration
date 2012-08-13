@@ -129,7 +129,7 @@ class OneMigration
   def livemigrate
     @onevms.each do |v|
       cmd = "onevm livemigrate #{v} #{@dest} -v"
-      puts "# Migrating VM #{v}to #{@dest} using command :#{cmd}"
+      puts "# Migrating VM #{v} to #{@dest} using command: #{cmd}"
       vinfo = `#{cmd}`
       puts "# #{vinfo}"
     end
