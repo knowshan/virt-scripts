@@ -20,12 +20,12 @@ require 'nokogiri'
 # Using #2 aproach other classes can pass arguments dynamically, however, that
 # may not be a good solution.
 
-DomainStruct = Struct.new(:name,:memory,:disk,:vncport,:os_cmdline) do
+DomainStruct = Struct.new(:name,:memory,:disk,:network,:vncport,:os_cmdline) do
   # Ideally - I would like to pass initialize values as a Hash
   # :name => 'server-01', :memory => '1048576', ...
   # that will need more hacking and being aware of it's side-effects
-  def initialize(name,memory,disk,vncport,os_cmdline)
-    super(name,memory,disk,vncport,os_cmdline)
+  def initialize(name,memory,disk,network,vncport,os_cmdline)
+    super(name,memory,disk,network,vncport,os_cmdline)
     raise ArgumentError.new("You need to provide at least domain name!") if self.name.nil?
     # Set defaults if not provided
     # We can/should run additional validation checks as well
@@ -70,8 +70,8 @@ DomainStruct = Struct.new(:name,:memory,:disk,:vncport,:os_cmdline) do
 	    # libvirt can auto-generate pci address space
 	    # xml.address('type' => 'pci', 'domain' => '0x0000', 'bus' => '0x00', 'slot' => '0x04', 'function' => '0x0')
 	  }
-	  xml.interface('type' => 'bridge'){
-	    xml.source('bridge' => 'br1')
+	  xml.interface('type' => 'network'){
+	    xml.source('network' => network)
 	    xml.model('type' => 'virtio')
 	    # xml.address('type' => 'pci', 'domain' => '0x0000', 'bus' => '0x00', 'slot' => '0x03', 'function' => '0x0')
 	  }
